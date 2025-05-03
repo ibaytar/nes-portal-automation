@@ -3,8 +3,8 @@ credentials:
     admin:
       email: admin@domain.com
       name: Admin User
-      password: $2b$12$IvwPLok4DbhkTZRNraJCE.FVScLHWDwOM1CmLykkCbci4E9.wuf3C  # Password is: admin123
+      password: $2b$12$IvwPLok4DbhkTZRNraJCE.FVScLHWDwOM1CmLykkCbci4E9.wuf3C # Password is: admin123
 cookie:
   expiry_days: 30
   key: nes_portal_signature_key
-  name: nes_portal_cookie
+  name: nes_portal_auth_cookie

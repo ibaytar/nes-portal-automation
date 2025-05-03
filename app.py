@@ -35,17 +35,21 @@ if 'orders_processed_today' not in st.session_state:
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
+# --- Add this line for debugging ---
+print("DEBUG: Loaded config:", config)
+# ----------------------------------
+
 # Create the authenticator
 authenticator = stauth.Authenticate(
     credentials=config['credentials'],
     cookie_name=config['cookie']['name'],
-    key=config['cookie']['key'],
-    cookie_expiry_days=config['cookie']['expiry_days']
+    cookie_expiry_days=config['cookie']['expiry_days'],
+    cookie_key=config['cookie']['key']
 )
 
 # Add login to sidebar
 st.sidebar.title("Login")
-authenticator.login('Login Form')
+authenticator.login(fields={'Form name': 'Login Form'})
 
 if st.session_state['authentication_status']:
     authenticator.logout('Logout')
