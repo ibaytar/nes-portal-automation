@@ -1,3 +1,12 @@
+# For automation.py
 playwright==1.44.0
 pandas==2.2.2
 python-dotenv==0.21.0
+
+# For app.py
+streamlit==1.35.0 # Or your specific version
+streamlit-authenticator==0.3.2 # Or your specific version
+PyYAML==6.0.1 # Or your specific version
+# pandas is already included above
+
+# Add any other dependencies needed by merge_exchange_rates.py
