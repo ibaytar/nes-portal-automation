@@ -1,0 +1,23 @@
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Output directories
+screenshots/
+*error*.png
+
+# Input data (if you don't want to commit it)
+data/
+date/
+
+# IDE/Editor specific
+.vscode/
+.idea/ 
