@@ -100,6 +100,10 @@ if st.session_state['authentication_status']:
                     st.error(f"Output file {output_file} not found!")
             except subprocess.CalledProcessError as e:
                 st.error(f"Error processing files: {str(e)}")
+            except FileNotFoundError as e:
+                st.error(f"File not found: {str(e)}")
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {str(e)}")
     
     # Show data filtering and automation controls if we have processed data
     if st.session_state['show_controls'] and st.session_state['processed_data'] is not None:
