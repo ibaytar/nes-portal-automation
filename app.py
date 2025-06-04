@@ -41,18 +41,19 @@ print("DEBUG: Loaded config:", config)
 
 # Create the authenticator
 authenticator = stauth.Authenticate(
-    credentials=config['credentials'],
-    cookie_name=config['cookie']['name'],
-    cookie_expiry_days=config['cookie']['expiry_days'],
-    cookie_key=config['cookie']['key']
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+    config.get('preauthorized')
 )
 
 # Add login to sidebar
 st.sidebar.title("Login")
-authenticator.login(fields={'Form name': 'Login Form'})
+name, authentication_status, username = authenticator.login('Login Form', 'sidebar')
 
 if st.session_state['authentication_status']:
-    authenticator.logout('Logout')
+    authenticator.logout('Logout', 'sidebar')
     st.write(f'Welcome *{st.session_state["name"]}*')
     
     st.title('NES Portal Invoice Generator')
@@ -188,39 +189,65 @@ if st.session_state['authentication_status']:
             if auto_mode:
                 # Calculate auto mode dates based on today
                 auto_today = datetime.now().date()
-                auto_max_date = auto_today
-                auto_min_date = auto_today - timedelta(days=7)
+                
+                # Calculate one week before
+                one_week_before = auto_today - timedelta(days=7)
+                
+                # Check if one week before is in a different month
+                if one_week_before.month != auto_today.month:
+                    # If different month, use days from one week before to end of that month
+                    auto_min_date = one_week_before
+                    # Get last day of the previous month
+                    auto_max_date = auto_today.replace(day=1) - timedelta(days=1)
+                else:
+                    # If same month, use days from one week before to today
+                    auto_min_date = one_week_before
+                    auto_max_date = auto_today
                 
                 total_orders = len(filtered_data)
                 days_between = (auto_max_date - auto_min_date).days + 1
                 
-                # Calculate even distribution with ceiling
-                base_orders_per_day = total_orders // days_between
-                if total_orders % days_between > 0:
-                    base_orders_per_day += 1
-                
-                # Create a dictionary to store orders per date
-                date_distribution = {}
-                current_date = auto_min_date
-                remaining_orders = total_orders
-                
-                # Distribute orders evenly
-                while current_date <= auto_max_date and remaining_orders > 0:
-                    if current_date == auto_max_date or remaining_orders <= base_orders_per_day:
-                        # On last day or if we have fewer orders than base_orders_per_day
-                        date_distribution[current_date] = remaining_orders
-                    else:
-                        date_distribution[current_date] = base_orders_per_day
-                    remaining_orders -= date_distribution[current_date]
-                    current_date += timedelta(days=1)
+                # Calculate distribution
+                if total_orders > 0 and days_between > 0:
+                    base_orders_per_day = total_orders // days_between
+                    remainder = total_orders % days_between
+                    
+                    # Create a dictionary to store orders per date
+                    date_distribution = {}
+                    current_date = auto_min_date
+                    
+                    # Distribute orders
+                    for i in range(days_between):
+                        if i < remainder:
+                            # First 'remainder' days get one extra order
+                            orders_for_day = base_orders_per_day + 1
+                        else:
+                            orders_for_day = base_orders_per_day
+                        
+                        date_distribution[current_date] = orders_for_day
+                        current_date += timedelta(days=1)
+                else:
+                    date_distribution = {}
 
                 # Store the distribution in session state for use during processing
                 st.session_state['date_distribution'] = date_distribution
                 st.session_state['current_processing_date'] = auto_min_date
                 st.session_state['orders_processed_today'] = 0
 
-                # Show the distribution plan
+                # Show the distribution plan with detailed info
                 st.write("Auto Mode Distribution Plan:")
+                if one_week_before.month != auto_today.month:
+                    st.write(f"ℹ️ One week ago ({one_week_before.strftime('%d.%m')}) is in {one_week_before.strftime('%B')}.")
+                    st.write(f"📅 Using {one_week_before.strftime('%B')} dates: {auto_min_date.strftime('%d.%m')} to {auto_max_date.strftime('%d.%m')}")
+                    st.write(f"🔢 {total_orders} invoices ÷ {days_between} days = {total_orders // days_between} invoices/day")
+                    if remainder > 0:
+                        st.write(f"➕ {remainder} remainder: first {remainder} days get +1 invoice")
+                else:
+                    st.write(f"📅 Using {auto_min_date.strftime('%B')} dates: {auto_min_date.strftime('%d.%m')} to {auto_max_date.strftime('%d.%m')}")
+                    st.write(f"🔢 {total_orders} invoices ÷ {days_between} days = {total_orders // days_between} invoices/day")
+                    if remainder > 0:
+                        st.write(f"➕ {remainder} remainder: first {remainder} days get +1 invoice")
+                
                 for date, count in date_distribution.items():
                     st.write(f"{date.strftime('%d.%m')}: {count} orders")
             
@@ -256,6 +283,16 @@ if st.session_state['authentication_status']:
                             with open(date_file, 'w') as f:
                                 json.dump({'invoice_date': formatted_date}, f)
                             cmd.extend(['--date-file', date_file])
+                            
+                            # Create distribution plan file for automation script
+                            distribution_file = "distribution_plan.json"
+                            distribution_plan = []
+                            for date, count in date_distribution.items():
+                                distribution_plan.extend([date.strftime('%m-%d')] * count)
+                            
+                            with open(distribution_file, 'w') as f:
+                                json.dump({'distribution_plan': distribution_plan}, f)
+                            cmd.extend(['--distribution-file', distribution_file])
                         else:
                             # Use selected invoice_date in manual mode
                             formatted_date = invoice_date.strftime('%m-%d')

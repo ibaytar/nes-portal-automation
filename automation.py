@@ -24,6 +24,7 @@ parser.add_argument('--screenshot', action='store_true', help="Take a screenshot
 parser.add_argument('--row-replacement', type=str, default="Personalize Defter", help="Row replacement value")
 parser.add_argument('--input-csv', type=str, required=True, help="Path to the filtered CSV file to process")
 parser.add_argument('--date-file', type=str, help="Path to file for dynamic date updates")
+parser.add_argument('--distribution-file', type=str, help="Path to file containing date distribution plan")
 args = parser.parse_args()
 
 invoice_date = args.invoice_date
@@ -31,6 +32,17 @@ take_screenshot = args.screenshot
 row_replacement = args.row_replacement
 input_csv = args.input_csv
 date_file = args.date_file
+distribution_file = args.distribution_file
+
+# Load distribution plan if available
+distribution_plan = None
+if distribution_file and Path(distribution_file).exists():
+    try:
+        with open(distribution_file, 'r') as f:
+            data = json.load(f)
+            distribution_plan = data.get('distribution_plan', None)
+    except Exception as e:
+        logging.warning(f"Failed to load distribution plan: {e}")
 
 # Get credentials from environment variables
 NES_USERNAME = os.getenv('NES_USERNAME')
@@ -88,8 +100,13 @@ COUNTRY_MAPPING = {
 def get_turkish_country(english_country):
     return COUNTRY_MAPPING.get(english_country, english_country)
 
-def get_current_date():
-    """Get the current invoice date, either from date file or command line argument"""
+def get_current_date(order_index=None):
+    """Get the current invoice date, using distribution plan if available"""
+    # If we have a distribution plan and order index, use the plan
+    if distribution_plan and order_index is not None and order_index < len(distribution_plan):
+        return distribution_plan[order_index]
+    
+    # Otherwise, fall back to date file or command line argument
     if date_file and Path(date_file).exists():
         try:
             with open(date_file, 'r') as f:
@@ -132,7 +149,7 @@ def process_orders():
         try:
             for index, row in df.iterrows():
                 try:
-                    current_date = get_current_date()  # Get potentially updated date
+                    current_date = get_current_date(index)  # Get date based on distribution plan or fallback
                     logging.debug(f"Processing order {index + 1} of {len(df)}: {row['Order ID']} with date {current_date}")
                     
                     # NAVIGATE
@@ -214,7 +231,7 @@ def process_orders():
                     
                     # HANDLE DATE & CURRENCY
                     logging.debug("Setting invoice date")
-                    # Invoice date: wait for the field, scroll into view, then click to open picker.
+                    # Invoice date: wait for the field, scroll into view
                     invoice_date_locator = page.get_by_label("Düzenleme Tarihi")
                     try:
                         invoice_date_locator.wait_for(state="visible", timeout=45000)
@@ -222,25 +239,29 @@ def process_orders():
                         html_snippet = page.content()[:500]
                         logging.error("Invoice date field did not become visible. Page snippet:\n" + html_snippet)
                         raise e
-                    invoice_date_locator.evaluate("el => el.scrollIntoView()")
-                    invoice_date_locator.click()
                     
-                    # Wait for the date picker panel to appear
-                    page.wait_for_selector(".ant-picker-panel", state="visible", timeout=15000)
+                    # Parse current_date (MM-DD format) and format for Turkish date input (DD.MM.YYYY)
+                    month = current_date.split('-')[0].zfill(2)
+                    day = current_date.split('-')[1].zfill(2)
+                    formatted_date = f"{day}.{month}.2025"
+                    logging.debug(f"Setting date to: {formatted_date}")
                     
-                    # Extract day and remove leading zero if present (e.g., "09" becomes "9")
-                    day = str(int(current_date.split('-')[1]))
+                    # Use the working date setting approach - click first to make editable, then fill
+                    try:
+                        # First click to open the date picker / make field editable
+                        invoice_date_locator.click()
+                        logging.debug("Clicked on date field to make it editable")
+                        
+                        # Now fill the date
+                        invoice_date_locator.fill(formatted_date)
+                        invoice_date_locator.press("Enter")
+                        logging.debug(f"Successfully set date via click+fill method: {formatted_date}")
+                    except Exception as e:
+                        logging.error(f"Error setting date via click+fill method: {str(e)}")
+                        raise e
                     
-                    # Find the date cell that matches our day number
-                    date_cells = page.locator(".ant-picker-cell-inner")
-                    for i in range(date_cells.count()):
-                        cell = date_cells.nth(i)
-                        if cell.text_content().strip() == day:
-                            cell.click()
-                            break
-                    
-                    # Wait until the panel closes
-                    page.wait_for_selector(".ant-picker-panel", state="hidden", timeout=15000)
+                    # Continue with the flow
+                    logging.debug("Continuing flow after date selection")
                     
                     logging.debug("Switching currency from Türk Lirası to Amerikan Doları")
                     try:
